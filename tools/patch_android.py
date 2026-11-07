@@ -67,8 +67,18 @@ if os.path.exists(man):
     open(man, 'w', encoding='utf8').write(t2); print('allowBackup:', 'desactivado' if t2 != t else 'ya estaba / no encontrado')
 
 # 5) selector de carpeta de datos (Storage Access Framework): plugin propio + registro en MainActivity
+def aviso(msg):
+    print('::warning::' + msg)   # aparece como aviso amarillo en la página de la ejecución
 ma = main_activity()
-if ma and os.path.isdir(src_native):
+faltan = [f for f in ('LomoSafPlugin.java', 'MainActivity.java', 'MainActivity.plain.java') if not os.path.isfile(os.path.join(src_native, f))]
+if faltan:
+    aviso('NO SE INSTALA EL SELECTOR DE CARPETA: faltan en el repositorio estos archivos de la carpeta "android-src": ' + ', '.join(faltan) +
+          '. Debe estar junto a package.json y contener LomoSafPlugin.java, MainActivity.java y MainActivity.plain.java. (Se buscó en: ' + src_native + ')')
+elif not ma:
+    aviso('NO SE INSTALA EL SELECTOR DE CARPETA: no se encontró MainActivity.java dentro de ' + java_root)
+    for dp, dn, fn in os.walk(java_root):
+        print('   ', os.path.relpath(dp, raiz), fn)
+else:
     pkg_dir = os.path.dirname(ma)
     shutil.copy(os.path.join(src_native, 'LomoSafPlugin.java'), os.path.join(pkg_dir, 'LomoSafPlugin.java'))
     shutil.copy(os.path.join(src_native, 'MainActivity.java'), ma)
@@ -79,5 +89,3 @@ if ma and os.path.isdir(src_native):
         t = re.sub(r'^package [\w.]+;', 'package ' + pk + ';', t, count=1, flags=re.M)
         open(f, 'w', encoding='utf8').write(t)
     print('selector de carpeta nativo instalado en el paquete', pk)
-else:
-    print('AVISO: no se encontró MainActivity.java; el APK usará solo el almacenamiento interno')

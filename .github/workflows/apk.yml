@@ -14,45 +14,68 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - name: Buscar la carpeta del proyecto
+        run: |
+          echo "Contenido del repositorio:"
+          find . -maxdepth 3 -not -path './.git/*' -not -path './.git' | sort | head -60
+          F=$(find . -name capacitor.config.json -not -path '*/node_modules/*' | head -1)
+          if [ -z "$F" ]; then
+            echo "::error::No se encontró capacitor.config.json en el repositorio. Sube de nuevo los archivos del proyecto (package.json, capacitor.config.json, index.html y las carpetas tools, assets, icons y android-res)."
+            exit 1
+          fi
+          D=$(dirname "$F")
+          echo "Proyecto en: $D"
+          echo "PROJ=$D" >> "$GITHUB_ENV"
+          for f in package.json index.html tools/copy-vendor.js tools/make-www.js tools/patch_android.py tools/lomo-debug.keystore tools/sign.init.gradle android-res/background.txt assets/logo.png; do
+            if [ ! -f "$D/$f" ]; then echo "::error::Falta el archivo $f dentro de $D"; MISSING=1; fi
+          done
+          [ -z "$MISSING" ] || exit 1
+
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
       - name: Instalar dependencias (y copiar librerías y fuentes)
+        working-directory: ${{ env.PROJ }}
         run: npm install --no-audit --no-fund
 
       - name: Preparar la carpeta www
+        working-directory: ${{ env.PROJ }}
         run: node tools/make-www.js
 
       - name: Crear el proyecto Android
+        working-directory: ${{ env.PROJ }}
         run: npx cap add android
 
       - name: Iconos, pantalla de inicio y ajustes
+        working-directory: ${{ env.PROJ }}
         run: python3 tools/patch_android.py
 
       - name: Sincronizar la app con Android
+        working-directory: ${{ env.PROJ }}
         run: npx cap sync android
 
-      - name: Usar la firma fija de Lomo
-        run: |
-          mkdir -p ~/.android
-          cp tools/lomo-debug.keystore ~/.android/debug.keystore
 
       - name: Compilar el APK
-        working-directory: android
+        working-directory: ${{ env.PROJ }}/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace -I ../tools/sign.init.gradle
 
       - name: Poner nombre al APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk Lomo.apk
+        run: cp "$PROJ/android/app/build/outputs/apk/debug/app-debug.apk" Lomo.apk
+
+      - name: Comprobar que lleva la firma fija
+        run: |
+          keytool -printcert -jarfile Lomo.apk | tee firma.txt
+          grep -q "Lomo Debug" firma.txt || { echo "::error::El APK no quedó firmado con la clave fija de Lomo (tools/lomo-debug.keystore)"; exit 1; }
 
       - name: Guardar como archivo de la ejecución
         uses: actions/upload-artifact@v4

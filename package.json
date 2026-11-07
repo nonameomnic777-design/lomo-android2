@@ -1,0 +1,24 @@
+{
+  "name": "lomo-android",
+  "productName": "Lomo",
+  "version": "1.7.0",
+  "private": true,
+  "description": "Lomo para Android (APK) con Capacitor",
+  "scripts": {
+    "postinstall": "node tools/copy-vendor.js",
+    "www": "node tools/make-www.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/share": "^6.0.0",
+    "@fontsource/literata": "^5.0.0",
+    "@fontsource/schibsted-grotesk": "^5.0.0",
+    "epubjs": "^0.3.93",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "3.11.174"
+  }
+}

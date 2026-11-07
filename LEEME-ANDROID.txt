@@ -1,0 +1,48 @@
+LOMO PARA ANDROID (APK) - compilado por GitHub, sin instalar Android Studio
+============================================================================
+
+Qué es
+  El mismo Lomo, empaquetado como app de Android (archivo .apk). Se instala sin Play Store y sin cuenta de
+  Google, funciona sin internet y tiene su propio icono y pantalla de inicio. GitHub compila el APK por ti.
+
+PASOS (una sola vez)
+ 1) En GitHub crea un repositorio NUEVO, por ejemplo "lomo-android" (público).
+    No lo mezcles con el de la página web: es otro proyecto.
+ 2) Sube a su raíz TODO el contenido de esta carpeta (arrastra los archivos y carpetas, no la carpeta contenedora):
+      index.html, package.json, capacitor.config.json, .gitignore, assets, icons, tools, android-res y .github
+    Ojo con ".github": empieza con punto y Windows puede ocultarla. En el Explorador activa
+    Vista > Mostrar > Elementos ocultos. Si GitHub no la acepta al arrastrar, hazlo a mano:
+      Add file > Create new file, escribe el nombre  .github/workflows/apk.yml  (las barras crean las carpetas)
+      y pega dentro el contenido del archivo apk.yml de esta carpeta.
+    No subas node_modules.
+ 3) Entra en la pestaña "Actions". Si pide activarlas, acepta. Elige "Compilar APK de Lomo" > "Run workflow".
+    (También se lanza solo cada vez que cambias algo.) Tarda de 8 a 15 minutos la primera vez.
+ 4) Al terminar, en la página principal del repositorio, a la derecha, entra en "Releases" > "Lomo para Android"
+    y descarga "Lomo.apk". Hazlo directamente desde el teléfono.
+ 5) Ábrelo en el teléfono. Android pedirá permiso para "instalar apps de esta fuente" (al navegador o a Archivos):
+    actívalo. Si aparece el aviso de Play Protect de "app no verificada", elige "Instalar de todos modos".
+
+ACTUALIZAR
+  Cuando cambie el index.html (te lo daré yo), súbelo al repositorio (Add file > Upload files, mismo nombre,
+  confirma "Commit"). GitHub compila de nuevo y publica el nuevo APK en el mismo sitio.
+  El APK va firmado con una clave fija (tools/lomo-debug.keystore), así que se instala ENCIMA del anterior
+  y conservas tus libros. Si algún día cambias esa clave, Android pedirá desinstalar primero y perderías los libros.
+
+SI LA COMPILACIÓN FALLA (cruz roja en Actions)
+  Abre la ejecución fallida, pulsa el paso que salió en rojo y hazme una captura de las últimas líneas.
+  Este proyecto no se ha podido compilar en mi entorno (no tiene acceso a Android): es probable que
+  necesitemos uno o dos ajustes en la primera ejecución.
+
+QUÉ INCLUYE ESTA VERSIÓN
+  - Todo Lomo: EPUB, PDF, TXT, subrayados, notas, listas, estadísticas, voz, temas.
+  - Gestos táctiles y hojas desde abajo.
+  - Botón "atrás" de Android: cierra primero el panel o diálogo abierto, luego sale del libro y,
+    en la biblioteca, cierra la app.
+  - Exportar subrayados: abre el menú de compartir de Android (guardar en Archivos, enviar por correo, etc.).
+  - Sin copia de seguridad automática a Google: tus libros solo están en el teléfono.
+
+QUÉ FALTA (próximas versiones)
+  - "Abrir con" desde el gestor de archivos y "Compartir a Lomo". Por ahora los libros se agregan con
+    "Agregar libros" dentro de la app.
+  - Copia de seguridad en un solo archivo para pasar la biblioteca al PC o a otro teléfono.
+  - Si desinstalas la app, los libros se borran (no hay copia en la nube).

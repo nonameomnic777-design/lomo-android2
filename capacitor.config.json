@@ -1,0 +1,8 @@
+{
+  "appId": "app.lomo.reader",
+  "appName": "Lomo",
+  "webDir": "www",
+  "backgroundColor": "#EEF1F4",
+  "server": { "androidScheme": "https" },
+  "android": { "allowMixedContent": false }
+}

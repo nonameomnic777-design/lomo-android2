@@ -1,0 +1,15 @@
+// Fuerza que el APK se firme con la clave fija de Lomo (tools/lomo-debug.keystore) en lugar de una clave
+// aleatoria que Android genera en cada compilación. Con la firma fija, cada APK nuevo se instala encima del anterior.
+allprojects { p ->
+    p.afterEvaluate {
+        if (p.plugins.hasPlugin('com.android.application')) {
+            def ks = new File(p.rootProject.projectDir.parentFile, 'tools/lomo-debug.keystore')
+            if (!ks.exists()) throw new GradleException('No se encuentra la clave de firma: ' + ks)
+            p.android.signingConfigs.debug.storeFile = ks
+            p.android.signingConfigs.debug.storePassword = 'android'
+            p.android.signingConfigs.debug.keyAlias = 'androiddebugkey'
+            p.android.signingConfigs.debug.keyPassword = 'android'
+            println('Firma fija de Lomo: ' + ks)
+        }
+    }
+}

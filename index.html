@@ -338,6 +338,11 @@ button,.li,.pick,.tab,.seg button{touch-action:manipulation}
   #brushSw{position:absolute;top:calc(100% + 2px);left:50%;transform:translateX(-50%);margin:0;z-index:9;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 10px;box-shadow:var(--shadow)}
   #brushSw[hidden]{display:none}
 }
+/* ---------- solo en el APK: la página llena todo el espacio y sin atajos de teclado ---------- */
+html.apk .stagewrap{margin-inline:calc(-1 * max(16px,env(safe-area-inset-left,0px)));border-radius:0;border-inline:0}
+html.apk .pdfpad{padding:0;min-height:100%;align-items:center}
+html.apk .pdfpad canvas{box-shadow:none}
+html.apk #keysLink{display:none}
 @keyframes sheetUp{from{transform:translateY(36px);opacity:.3}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.modal-card,.pop{animation:none}}
 /* aviso de versión nueva (solo aparece en la versión instalable) */
@@ -1364,7 +1369,8 @@ async function renderPdf(){
   try{R.renderTask&&R.renderTask.cancel()}catch(e){}
   const page=await doc.getPage(n);if(!R||R.renderToken!==tok)return;
   const wrap=$('#pdfScroll'),v0=page.getViewport({scale:1});
-  const aw=Math.max(120,wrap.clientWidth-32),ah=Math.max(120,wrap.clientHeight-32);
+  const mg=document.documentElement.classList.contains('apk')?0:32;
+  const aw=Math.max(120,wrap.clientWidth-mg),ah=Math.max(120,wrap.clientHeight-mg);
   let sc=prefs.fit==='page'?Math.min(aw/v0.width,ah/v0.height):aw/v0.width;
   sc*=prefs.zoom;
   const dpr=Math.min(window.devicePixelRatio||1,2.5),vp=page.getViewport({scale:sc*dpr});
@@ -1640,6 +1646,7 @@ function bookMd(b,lvl){
 }
 /* ---------- app de Android (Capacitor): detección y archivos ---------- */
 const isApk=()=>{try{return !!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform())}catch(e){return false}};
+if(isApk())document.documentElement.classList.add('apk');
 const capPlug=n=>{try{return (window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins[n])||null}catch(e){return null}};
 async function nativeSaveShare(name,text){
   const F=capPlug('Filesystem'),Sh=capPlug('Share');if(!F)return false;
@@ -1852,6 +1859,144 @@ $('#alignSeg').addEventListener('click',e=>{const b=e.target.closest('button');i
 $('#themeSeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;themePref=b.dataset.v;lsSet('lomo.theme',themePref);applyTheme()});
 document.addEventListener('pointerdown',e=>{if(!$('#pop').hidden&&!e.target.closest('#pop,#prefBtn'))togglePop(false)});
 
+/* ---------- Android: carpeta de datos elegida con el selector del sistema (almacenamiento, tarjeta SD, Google Drive, etc.) ----------
+   Imita a lomoNative de la app de escritorio, así que todo lo demás (migración, estados, aviso de carpeta ausente) es el mismo código.
+   El plugin nativo LomoSaf solo ofrece lo básico (elegir carpeta, leer, escribir, listar, borrar); la organización de archivos es la misma
+   que la de escritorio: <carpeta>/Lomo/{lomo.json, datos/<id>.json, libros/<id>.<ext>}. */
+function makeAndroidNative(){
+  const P=capPlug('LomoSaf');if(!P)return null;
+  const CFG='lomo.saf',META_RE=/^[A-Za-z0-9_-]{1,64}\.json$/,ID_RE=/^[A-Za-z0-9_-]{1,64}$/,EXTS=['epub','pdf'];
+  const rd=()=>{try{return JSON.parse(localStorage.getItem(CFG)||'null')||{}}catch(e){return{}}};
+  const wr=c=>{try{localStorage.setItem(CFG,JSON.stringify(c))}catch(e){}};
+  const enc=new TextEncoder(),dec=new TextDecoder();
+  const b64=buf=>{const u=buf instanceof Uint8Array?buf:new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)};
+  const unb64=s=>{const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u};
+  const checkId=id=>{if(typeof id!=='string'||!ID_RE.test(id))throw new Error('Identificador de libro no válido');return id};
+  const checkExt=x=>{if(!EXTS.includes(x))throw new Error('Formato de libro no admitido');return x};
+  const label=(name,root)=>(name||'Carpeta elegida')+(root?' › '+root:'');
+  const readText=async(tree,path)=>{const r=await P.read({tree,path});return r&&r.exists?dec.decode(unb64(r.data)):null};
+  const ls=async(tree,path)=>{const r=await P.readdir({tree,path});return (r&&r.entries)||[]};
+  /* Dada la carpeta elegida, decide cuál es la carpeta real de la biblioteca (mismas reglas que en escritorio) */
+  async function resolveRoot(tree,name){
+    const top=await ls(tree,'');
+    if(top.some(e=>e.dir&&e.name==='Lomo')&&await readText(tree,'Lomo/lomo.json')!==null)return 'Lomo';
+    if(top.some(e=>!e.dir&&e.name==='lomo.json'))return '';
+    if(String(name||'').toLowerCase()==='lomo')return '';
+    return 'Lomo';
+  }
+  function mkStore(tree,root){
+    const J=(...p)=>[root,...p].filter(Boolean).join('/');
+    const queues=new Map(),inflight=new Set();let prepared=false;
+    const enqueue=(id,fn)=>{
+      const prev=queues.get(id)||Promise.resolve();
+      const p=prev.catch(()=>{}).then(()=>fn());
+      queues.set(id,p);inflight.add(p);
+      const done=()=>{inflight.delete(p);if(queues.get(id)===p)queues.delete(id)};
+      p.then(done,done);return p;
+    };
+    const idle=async()=>{while(inflight.size)await Promise.allSettled([...inflight])};
+    const prepare=async()=>{
+      if(prepared)return;
+      if(await readText(tree,J('lomo.json'))===null)await P.write({tree,path:J('lomo.json'),data:b64(enc.encode(JSON.stringify({app:'Lomo',version:1,created:new Date().toISOString()},null,2)))});
+      prepared=true;
+    };
+    return {
+      async list(){
+        await idle();
+        const names=(await ls(tree,J('datos'))).filter(e=>!e.dir&&META_RE.test(e.name)).map(e=>e.name);
+        const out=[];
+        for(let i=0;i<names.length;i+=6){
+          const chunk=await Promise.all(names.slice(i,i+6).map(async n=>{
+            try{const j=JSON.parse(await readText(tree,J('datos',n)));return j&&j.id===n.slice(0,-5)?j:null}catch(e){return null}
+          }));
+          out.push(...chunk.filter(Boolean));
+        }
+        return out;
+      },
+      putMeta(meta){
+        const id=checkId(meta&&meta.id),text=JSON.stringify(meta);
+        return enqueue(id,async()=>{await prepare();await P.write({tree,path:J('datos',id+'.json'),data:b64(enc.encode(text))})});
+      },
+      putFile(id,ext,buf){
+        checkId(id);checkExt(ext);
+        return enqueue(id,async()=>{await prepare();await P.write({tree,path:J('libros',id+'.'+ext),data:b64(buf)})});
+      },
+      async getFile(id){
+        checkId(id);await (queues.get(id)||Promise.resolve()).catch(()=>{});
+        for(const ext of EXTS){
+          const r=await P.read({tree,path:J('libros',id+'.'+ext)});
+          if(r&&r.exists)return unb64(r.data);
+        }
+        return null;
+      },
+      remove(id){
+        checkId(id);
+        return enqueue(id,async()=>{
+          for(const t of [J('datos',id+'.json'),...EXTS.map(x=>J('libros',id+'.'+x))])await P.remove({tree,path:t});
+        });
+      },
+      async stats(){
+        await idle();
+        const count=(await ls(tree,J('datos'))).filter(e=>!e.dir&&META_RE.test(e.name)).length;
+        const bytes=(await ls(tree,J('libros'))).filter(e=>!e.dir&&/\.(epub|pdf)$/.test(e.name)).reduce((n,e)=>n+(e.size||0),0);
+        return {count,bytes};
+      },
+      idle
+    };
+  }
+  let active=null,chosen=null;
+  const slotOf=which=>{const s=which==='chosen'?chosen:active;if(!s)throw new Error('No hay una carpeta de datos disponible.');return s.st};
+  return {
+    isAndroid:true,
+    async getConfig(){
+      const c=rd();
+      if(!c.tree){active=null;return {root:null}}
+      let ok=false;try{const r=await P.check({tree:c.tree});ok=!!(r&&r.ok)}catch(e){}
+      if(!ok){active=null;return {root:c.label,missing:true}}
+      if(!active||active.tree!==c.tree)active={tree:c.tree,root:c.label,st:mkStore(c.tree,c.root)};
+      return {root:c.label};
+    },
+    async chooseFolder(){
+      const r=await P.pickFolder();
+      if(!r||!r.uri)return null;
+      const root=await resolveRoot(r.uri,r.name);
+      let count=0,exists=false;
+      try{exists=await readText(r.uri,[root,'lomo.json'].filter(Boolean).join('/'))!==null}catch(e){}
+      try{count=(await ls(r.uri,[root,'datos'].filter(Boolean).join('/'))).filter(e=>!e.dir&&META_RE.test(e.name)).length}catch(e){}
+      chosen={tree:r.uri,root:label(r.name,root),rel:root,st:mkStore(r.uri,root)};
+      return {root:chosen.root,exists,count};
+    },
+    async commitChosen(){
+      if(!chosen)throw new Error('Primero elige una carpeta.');
+      active=chosen;chosen=null;
+      wr({tree:active.tree,root:active.rel,label:active.root});
+      return {root:active.root};
+    },
+    async useInternal(){active=null;wr({});return {root:null}},
+    async openFolder(){return ''},
+    store:(which,op,...a)=>{
+      const st=slotOf(which);
+      switch(op){
+        case 'list':return st.list();
+        case 'stats':return st.stats();
+        case 'putMeta':return st.putMeta(a[0]);
+        case 'putFile':return st.putFile(a[0],a[1],a[2]);
+        case 'getFile':return st.getFile(a[0]);
+        case 'remove':return st.remove(a[0]);
+        default:throw new Error('Operación no válida');
+      }
+    },
+    async takePending(){return []},
+    async readOpenFile(){throw new Error('No disponible')},
+    onOpenFiles(){},
+    async getAssoc(){return {supported:false,reason:'No disponible en Android.',registered:false,stale:false,path:null}},
+    async setAssoc(){throw new Error('No disponible en Android.')},
+    async openDefaultApps(){},
+    onFlush(){} /* en Android, al pasar a segundo plano ya se guarda (visibilitychange) */
+  };
+}
+if(isApk()&&!window.lomoNative){try{const n=makeAndroidNative();if(n)window.lomoNative=n}catch(e){}}
+
 /* ---------- carpeta de datos y ajustes ---------- */
 const IS_DESKTOP=!!window.lomoNative;
 const cleanErr=e=>String(e&&e.message||e).replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/,'');
@@ -1967,7 +2112,7 @@ async function renderSettings(){
   }
   let h='<section class="set-sec"><h3 class="label-sm">Carpeta de datos</h3>';
   if(!IS_DESKTOP){
-    h+='<p class="muted">Aquí los libros se guardan en este navegador. En la app de escritorio puedes elegir una carpeta propia, por ejemplo dentro de OneDrive.</p>';
+    h+=isApk()?'<p class="muted">Aquí los libros se guardan dentro de la app.</p>':'<p class="muted">Aquí los libros se guardan en este navegador. En la app de escritorio puedes elegir una carpeta propia, por ejemplo dentro de OneDrive.</p>';
   }else{
     let info='';
     if(DB.kind==='fs'&&!DB.missing){try{const s=await DB.b.stats();info=s.count+(s.count===1?' libro':' libros')+' · '+fmtBytes(s.bytes)}catch(e){}}
@@ -1976,17 +2121,17 @@ async function renderSettings(){
     if(DB.missing)h+='<p class="warn">No se encuentra esta carpeta. Si está en un disco externo o en una carpeta sincronizada, conéctala y pulsa «Reintentar».</p>';
     else if(info)h+='<p class="muted">'+info+'</p>';
     h+='<div class="btnrow"><button class="btn primary" type="button" data-set="choose">Cambiar carpeta…</button>'+
-      (DB.kind==='fs'&&!DB.missing?'<button class="btn" type="button" data-set="open">Abrir en el Explorador</button><button class="btn" type="button" data-set="refresh">Actualizar</button>':'')+
+      (DB.kind==='fs'&&!DB.missing?(isApk()?'':'<button class="btn" type="button" data-set="open">Abrir en el Explorador</button>')+'<button class="btn" type="button" data-set="refresh">Actualizar</button>':'')+
       (DB.missing?'<button class="btn" type="button" data-set="retry">Reintentar</button>':'')+
       (DB.kind==='fs'?'<button class="btn" type="button" data-set="internal">Volver al almacenamiento interno</button>':'')+'</div>';
-    h+='<p class="muted small">Si eliges una carpeta de OneDrive, Google Drive o Dropbox, tendrás la misma biblioteca, subrayados y progreso en otra computadora. Lomo crea dentro una carpeta llamada «Lomo». No leas el mismo libro en dos equipos a la vez: se conserva el último cambio guardado.</p>';
+    h+=isApk()?'<p class="muted small">Elige una carpeta de tu teléfono, de la tarjeta SD o de Google Drive. Lomo crea dentro una carpeta llamada «Lomo» con tus libros, subrayados y progreso, y es la misma organización que usa la app de escritorio. No leas el mismo libro en dos dispositivos a la vez: se conserva el último cambio guardado. En Android 11 o superior no se puede elegir la raíz del almacenamiento ni la carpeta Descargas: crea o elige una carpeta dentro de Documentos.</p>':'<p class="muted small">Si eliges una carpeta de OneDrive, Google Drive o Dropbox, tendrás la misma biblioteca, subrayados y progreso en otra computadora. Lomo crea dentro una carpeta llamada «Lomo». No leas el mismo libro en dos equipos a la vez: se conserva el último cambio guardado.</p>';
   }
   h+='</section>';
   {
     const nH=lib.reduce((n,b)=>n+(b.hls||[]).length,0),nB=lib.filter(b=>(b.hls||[]).length||(b.marks||[]).length).length;
     h+='<section class="set-sec"><h3 class="label-sm">Subrayados y notas</h3>'+(nH?'<p class="muted">'+nH+(nH===1?' subrayado':' subrayados')+' en '+nB+(nB===1?' libro':' libros')+'.</p><div class="btnrow"><button class="btn primary" type="button" data-set="export-all">Exportar todo (.md)</button></div><p class="muted small">Un archivo Markdown con tus citas, notas y marcadores, listo para Obsidian, Notion o cualquier editor de texto. Para un solo libro, usa «Exportar .md» en el panel de marcadores del lector.</p>':'<p class="muted">Todavía no tienes subrayados. Cuando subrayes algo podrás exportarlo desde aquí.</p>')+'</section>';
   }
-  if(IS_DESKTOP){
+  if(IS_DESKTOP&&!isApk()){
     let as=null;try{as=await lomoNative.getAssoc()}catch(e){}
     h+='<section class="set-sec"><h3 class="label-sm">Abrir con doble clic</h3>';
     if(!as)h+='<p class="muted">No se pudo comprobar el registro de Windows.</p>';

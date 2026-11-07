@@ -1442,7 +1442,7 @@ $('#nextBtn').addEventListener('click',next);$('#edgeR').addEventListener('click
 $('#prevBtn').addEventListener('click',prev);$('#edgeL').addEventListener('click',prev);
 
 /* ---------- gestos táctiles: tocar los bordes o deslizar para pasar de página ---------- */
-const TOUCH={tap:350,move:12,swipe:56,edge:.28,last:0};
+const TOUCH={tap:650,move:16,swipe:56,edge:.28,last:0};
 function tapCenter(){
   const rv=$('#readerView');if(!rv.classList.contains('focus'))return;
   TOUCH.last=Date.now();
@@ -1451,7 +1451,9 @@ function tapCenter(){
 }
 function touchGestures(target,selDoc,type,toTop,area,canSwipe){
   let s=null;
-  const busy=()=>!R||R.type!==type||R.brush||R.erase||!!(window.visualViewport&&visualViewport.scale>1.02);
+  const busy=()=>!R||R.type!==type;
+  /* con el pincel o el borrador, o con la página ampliada, no se pasa de página con gestos; pero tocar el centro siempre funciona */
+  const pageGestures=()=>!R.brush&&!R.erase&&!(window.visualViewport&&visualViewport.scale>1.02);
   const hasSel=()=>{try{const g=selDoc.getSelection();return !!(g&&!g.isCollapsed&&String(g).trim())}catch(e){return false}};
   target.addEventListener('touchstart',e=>{s=null;if(busy()||e.touches.length!==1)return;const t=e.touches[0];s={x:t.clientX,y:t.clientY,t:Date.now(),el:e.target,sel:hasSel()}},{passive:true});
   target.addEventListener('touchmove',e=>{if(s&&e.touches.length>1)s=null},{passive:true});
@@ -1460,11 +1462,11 @@ function touchGestures(target,selDoc,type,toTop,area,canSwipe){
     const g=s;s=null;if(!g||busy()||g.sel||hasSel())return;
     const t=e.changedTouches&&e.changedTouches[0];if(!t)return;
     const dx=t.clientX-g.x,dy=t.clientY-g.y,dt=Date.now()-g.t,ax=Math.abs(dx),ay=Math.abs(dy);
-    if(ax>=TOUCH.swipe&&ax>1.6*ay&&dt<900){if(!canSwipe||canSwipe()){TOUCH.last=Date.now();dx<0?next():prev()}return}
+    if(ax>=TOUCH.swipe&&ax>1.6*ay&&dt<900){if(pageGestures()&&(!canSwipe||canSwipe())){TOUCH.last=Date.now();dx<0?next():prev()}return}
     if(ax<=TOUCH.move&&ay<=TOUCH.move&&dt<=TOUCH.tap){
       if(g.el&&g.el.closest&&g.el.closest('a,button,input,select,textarea,.hlr'))return;
       const p=toTop(t.clientX,t.clientY),r=area(),f=(p.x-r.left)/(r.width||1);
-      if(f<TOUCH.edge){TOUCH.last=Date.now();prev()}else if(f>1-TOUCH.edge){TOUCH.last=Date.now();next()}else tapCenter();
+      if(f<TOUCH.edge){if(pageGestures()){TOUCH.last=Date.now();prev()}}else if(f>1-TOUCH.edge){if(pageGestures()){TOUCH.last=Date.now();next()}}else tapCenter();
     }
   },{passive:true});
 }

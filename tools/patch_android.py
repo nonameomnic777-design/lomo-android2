@@ -2,6 +2,25 @@
 # Usa solo la biblioteca estándar de Python. Si algo no está donde se espera, avisa y sigue (el APK sale con el aspecto por defecto).
 import os, re, shutil, glob, sys
 raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src_native = os.path.join(raiz, 'android-src')
+java_root = os.path.join(raiz, 'android', 'app', 'src', 'main', 'java')
+
+def main_activity():
+    hits = glob.glob(os.path.join(java_root, '**', 'MainActivity.java'), recursive=True)
+    return hits[0] if hits else None
+
+# Modo de emergencia: quita el selector de carpeta nativo (si su compilación fallara, el APK sale igualmente, sin esa función)
+if '--remove-saf' in sys.argv:
+    ma = main_activity()
+    if ma:
+        shutil.copy(os.path.join(src_native, 'MainActivity.plain.java'), ma)
+        plug = os.path.join(os.path.dirname(ma), 'LomoSafPlugin.java')
+        if os.path.exists(plug): os.remove(plug)
+        print('selector de carpeta nativo QUITADO (MainActivity original)')
+    else:
+        print('AVISO: no se encontró MainActivity.java')
+    sys.exit(0)
+
 res = os.path.join(raiz, 'android', 'app', 'src', 'main', 'res')
 man = os.path.join(raiz, 'android', 'app', 'src', 'main', 'AndroidManifest.xml')
 mine = os.path.join(raiz, 'android-res')
@@ -46,3 +65,19 @@ if os.path.exists(man):
     t = open(man, encoding='utf8').read()
     t2 = t.replace('android:allowBackup="true"', 'android:allowBackup="false"')
     open(man, 'w', encoding='utf8').write(t2); print('allowBackup:', 'desactivado' if t2 != t else 'ya estaba / no encontrado')
+
+# 5) selector de carpeta de datos (Storage Access Framework): plugin propio + registro en MainActivity
+ma = main_activity()
+if ma and os.path.isdir(src_native):
+    pkg_dir = os.path.dirname(ma)
+    shutil.copy(os.path.join(src_native, 'LomoSafPlugin.java'), os.path.join(pkg_dir, 'LomoSafPlugin.java'))
+    shutil.copy(os.path.join(src_native, 'MainActivity.java'), ma)
+    # el paquete debe coincidir con el de la carpeta (por si cambia el appId)
+    pk = os.path.relpath(pkg_dir, java_root).replace(os.sep, '.')
+    for f in (ma, os.path.join(pkg_dir, 'LomoSafPlugin.java')):
+        t = open(f, encoding='utf8').read()
+        t = re.sub(r'^package [\w.]+;', 'package ' + pk + ';', t, count=1, flags=re.M)
+        open(f, 'w', encoding='utf8').write(t)
+    print('selector de carpeta nativo instalado en el paquete', pk)
+else:
+    print('AVISO: no se encontró MainActivity.java; el APK usará solo el almacenamiento interno')
